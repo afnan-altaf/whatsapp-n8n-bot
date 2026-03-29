@@ -1,0 +1,38 @@
+name: Deploy N8N WhatsApp Bot
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Deploy to Server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            cd ~/whatsapp-n8n-bot || git clone https://github.com/${{ github.repository }} ~/whatsapp-n8n-bot
+            cd ~/whatsapp-n8n-bot
+            git pull origin main
+            cp .env.example .env
+            # Update .env with secrets
+            sed -i "s/your-domain-or-ip/${{ secrets.N8N_HOST }}/g" .env
+            sed -i "s/YourStrongPasswordHere/${{ secrets.N8N_PASSWORD }}/g" .env
+            sed -i "s/change-this-to-a-random-32char-key/${{ secrets.N8N_ENCRYPTION_KEY }}/g" .env
+            sed -i "s/YourDBPasswordHere/${{ secrets.DB_PASSWORD }}/g" .env
+            sed -i "s/your_phone_number_id/${{ secrets.WHATSAPP_PHONE_NUMBER_ID }}/g" .env
+            sed -i "s/your_permanent_access_token/${{ secrets.WHATSAPP_ACCESS_TOKEN }}/g" .env
+            sed -i "s/your_custom_verify_token_here/${{ secrets.WHATSAPP_VERIFY_TOKEN }}/g" .env
+            docker compose pull
+            docker compose up -d --force-recreate
+            echo "✅ N8N deployed successfully!"
+            docker compose ps
