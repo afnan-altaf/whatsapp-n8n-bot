@@ -1,0 +1,418 @@
+{
+  "name": "WhatsApp Help Bot - +923396267447",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-verify",
+      "name": "Webhook Verify (Meta)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-webhook",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-receive",
+      "name": "Receive WhatsApp Message",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 400],
+      "webhookId": "whatsapp-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $query['hub.mode'] }}",
+              "operation": "equal",
+              "value2": "subscribe"
+            }
+          ]
+        }
+      },
+      "id": "check-verify",
+      "name": "Is Verification?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [460, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $query['hub.challenge'] }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-verify",
+      "name": "Return Challenge",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 160]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "Forbidden",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "respond-forbidden",
+      "name": "Forbidden",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 280]
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "OK",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [460, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\nif (!body || !body.entry || body.entry.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nconst entry = body.entry[0];\nconst changes = entry.changes?.[0];\nconst value = changes?.value;\n\nif (!value || !value.messages || value.messages.length === 0) {\n  return [{ json: { skip: true } }];\n}\n\nconst message = value.messages[0];\nconst contact = value.contacts?.[0];\n\nconst senderNumber = message.from;\nconst senderName = contact?.profile?.name || 'User';\nconst messageType = message.type;\nlet messageText = '';\n\nif (messageType === 'text') {\n  messageText = message.text?.body || '';\n} else if (messageType === 'interactive') {\n  const interactive = message.interactive;\n  if (interactive.type === 'button_reply') {\n    messageText = interactive.button_reply?.id || '';\n  } else if (interactive.type === 'list_reply') {\n    messageText = interactive.list_reply?.id || '';\n  }\n}\n\nconst phoneNumberId = value.metadata?.phone_number_id;\n\nreturn [{\n  json: {\n    skip: false,\n    senderNumber,\n    senderName,\n    messageText: messageText.toLowerCase().trim(),\n    messageTextOriginal: messageText,\n    messageType,\n    phoneNumberId,\n    timestamp: message.timestamp\n  }\n}];"
+      },
+      "id": "extract-message",
+      "name": "Extract Message Info",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.skip }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-skip",
+      "name": "Valid Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [900, 400]
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $json.messageText;\nconst senderNumber = $json.senderNumber;\nconst senderName = $json.senderName;\n\n// Keywords categorization\nconst greetings = ['hi', 'hello', 'hey', 'salam', 'assalam', 'assalamualaikum', 'helo', 'start', 'menu'];\nconst priceKeywords = ['price', 'rate', 'cost', 'qeemat', 'amount', 'how much', 'kitna'];\nconst orderKeywords = ['order', 'buy', 'purchase', 'book', 'khareed', 'chahiye', 'want'];\nconst trackKeywords = ['track', 'status', 'where', 'kahan', 'parcel', 'delivery', 'kab'];\nconst supportKeywords = ['help', 'support', 'problem', 'issue', 'complaint', 'masla', 'madad'];\nconst humanKeywords = ['agent', 'human', 'representative', 'banda', 'insaan', 'talk to'];\n\nlet intent = 'unknown';\n\nif (greetings.some(g => msg.includes(g))) {\n  intent = 'greeting';\n} else if (priceKeywords.some(k => msg.includes(k))) {\n  intent = 'pricing';\n} else if (orderKeywords.some(k => msg.includes(k))) {\n  intent = 'order';\n} else if (trackKeywords.some(k => msg.includes(k))) {\n  intent = 'tracking';\n} else if (humanKeywords.some(k => msg.includes(k))) {\n  intent = 'human_agent';\n} else if (supportKeywords.some(k => msg.includes(k))) {\n  intent = 'support';\n} else if (msg === '1') {\n  intent = 'pricing';\n} else if (msg === '2') {\n  intent = 'order';\n} else if (msg === '3') {\n  intent = 'tracking';\n} else if (msg === '4') {\n  intent = 'support';\n} else if (msg === '5') {\n  intent = 'human_agent';\n}\n\nreturn [{ json: { ...$json, intent } }];"
+      },
+      "id": "detect-intent",
+      "name": "Detect Intent",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 320]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "rules": [
+            {
+              "value2": "greeting"
+            },
+            {
+              "value2": "pricing"
+            },
+            {
+              "value2": "order"
+            },
+            {
+              "value2": "tracking"
+            },
+            {
+              "value2": "support"
+            },
+            {
+              "value2": "human_agent"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      },
+      "id": "route-intent",
+      "name": "Route by Intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 2,
+      "position": [1340, 320],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.intent }}",
+        "rules": {
+          "rules": [
+            { "value2": "greeting", "outputKey": "0" },
+            { "value2": "pricing", "outputKey": "1" },
+            { "value2": "order", "outputKey": "2" },
+            { "value2": "tracking", "outputKey": "3" },
+            { "value2": "support", "outputKey": "4" },
+            { "value2": "human_agent", "outputKey": "5" }
+          ]
+        },
+        "fallbackOutput": 6
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const senderName = $json.senderName;\nreturn [{ json: {\n  ...$json,\n  replyMessage: `🌟 *Assalam-o-Alaikum ${senderName}!*\\n\\nWelcome to our Help Bot! How can I assist you today?\\n\\nPlease choose an option:\\n\\n1️⃣ Pricing / Rates\\n2️⃣ Place an Order\\n3️⃣ Track your Order\\n4️⃣ Support / Help\\n5️⃣ Talk to a Human Agent\\n\\n_Reply with a number (1-5) or type your question directly._`,\n  replyType: 'text'\n}}];"
+      },
+      "id": "reply-greeting",
+      "name": "Greeting Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  ...$json,\n  replyMessage: `💰 *Our Pricing / Rates:*\\n\\n📦 Standard Package: Rs. 500\\n🚀 Express Package: Rs. 800\\n⭐ Premium Package: Rs. 1200\\n\\n✅ All packages include:\\n• Free Delivery\\n• 24/7 Support\\n• Money-back Guarantee\\n\\nTo place an order, reply *ORDER* or type *2*\\n\\n_For custom pricing, contact: +923396267447_`,\n  replyType: 'text'\n}}];"
+      },
+      "id": "reply-pricing",
+      "name": "Pricing Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 220]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  ...$json,\n  replyMessage: `🛒 *Place an Order*\\n\\nTo place your order, please send us the following details:\\n\\n1. Your Full Name\\n2. Complete Address\\n3. Product/Service Name\\n4. Quantity\\n5. Contact Number\\n\\nExample:\\n_Ali Ahmed, House #5 Street 3 Lahore, Standard Package, 1 piece, 0301-1234567_\\n\\n📞 Or call us directly: +923396267447\\n\\n⏰ Order Processing Time: 24-48 hours`,\n  replyType: 'text'\n}}];"
+      },
+      "id": "reply-order",
+      "name": "Order Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 340]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  ...$json,\n  replyMessage: `📍 *Track Your Order*\\n\\nTo track your order, please provide:\\n\\n🔢 Your *Order ID* or *Tracking Number*\\n\\nFormat: Send your order ID like:\\n_TRACK-12345_\\n\\nOr share the phone number used for ordering.\\n\\n⏱ Delivery Status Updates:\\n• Confirmed ✅\\n• Packed 📦\\n• Dispatched 🚚\\n• Out for Delivery 🛵\\n• Delivered ✔️\\n\\n_For urgent tracking: +923396267447_`,\n  replyType: 'text'\n}}];"
+      },
+      "id": "reply-tracking",
+      "name": "Tracking Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 460]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  ...$json,\n  replyMessage: `🆘 *Support Center*\\n\\nHow can we help you? Please describe your issue or choose:\\n\\n🔧 *Common Issues:*\\n• Delayed delivery\\n• Wrong product received\\n• Refund request\\n• Account issues\\n\\nPlease describe your problem in detail and we will get back to you within *2 hours* during business hours.\\n\\n⏰ Support Hours:\\nMon-Sat: 9 AM - 9 PM (PKT)\\n\\n📞 Emergency: +923396267447`,\n  replyType: 'text'\n}}];"
+      },
+      "id": "reply-support",
+      "name": "Support Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 580]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  ...$json,\n  replyMessage: `👤 *Connecting to Human Agent...*\\n\\nPlease hold! A team member will join this chat shortly.\\n\\n⏳ Average wait time: 5-10 minutes\\n⏰ Available: 9 AM - 9 PM (Mon-Sat)\\n\\n📞 For immediate help, call:\\n*+923396267447*\\n\\n_If it's urgent, please call directly. We're here to help!_ 😊`,\n  replyType: 'text',\n  notifyOwner: true\n}}];"
+      },
+      "id": "reply-human",
+      "name": "Human Agent Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 700]
+    },
+    {
+      "parameters": {
+        "jsCode": "return [{ json: {\n  ...$json,\n  replyMessage: `🤔 *Sorry, I didn't understand that.*\\n\\nPlease choose from the menu:\\n\\n1️⃣ Pricing / Rates\\n2️⃣ Place an Order\\n3️⃣ Track your Order\\n4️⃣ Support / Help\\n5️⃣ Talk to Human Agent\\n\\n_Or type your question and I'll try to help!_`,\n  replyType: 'text'\n}}];"
+      },
+      "id": "reply-unknown",
+      "name": "Unknown Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1560, 820]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppTriggerApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "={{ $json.senderNumber }}"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{ JSON.stringify({ body: $json.replyMessage }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-reply",
+      "name": "Send WhatsApp Reply",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1800, 400]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.notifyOwner }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-notify-owner",
+      "name": "Notify Owner?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1800, 700]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v18.0/{{ $json.phoneNumberId }}/messages",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "whatsAppTriggerApi",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "messaging_product",
+              "value": "whatsapp"
+            },
+            {
+              "name": "to",
+              "value": "923396267447"
+            },
+            {
+              "name": "type",
+              "value": "text"
+            },
+            {
+              "name": "text",
+              "value": "={{ JSON.stringify({ body: `🔔 *Human Agent Request!*\\n\\nCustomer: ${$json.senderName}\\nNumber: ${$json.senderNumber}\\nMessage: ${$json.messageTextOriginal}\\n\\nPlease respond ASAP!` }) }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-owner",
+      "name": "Alert Owner (+923396267447)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [2020, 660]
+    }
+  ],
+  "connections": {
+    "Webhook Verify (Meta)": {
+      "main": [[{ "node": "Is Verification?", "type": "main", "index": 0 }]]
+    },
+    "Is Verification?": {
+      "main": [
+        [{ "node": "Return Challenge", "type": "main", "index": 0 }],
+        [{ "node": "Forbidden", "type": "main", "index": 0 }]
+      ]
+    },
+    "Receive WhatsApp Message": {
+      "main": [
+        [
+          { "node": "Respond OK", "type": "main", "index": 0 },
+          { "node": "Extract Message Info", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Extract Message Info": {
+      "main": [[{ "node": "Valid Message?", "type": "main", "index": 0 }]]
+    },
+    "Valid Message?": {
+      "main": [
+        [],
+        [{ "node": "Detect Intent", "type": "main", "index": 0 }]
+      ]
+    },
+    "Detect Intent": {
+      "main": [[{ "node": "Route by Intent", "type": "main", "index": 0 }]]
+    },
+    "Route by Intent": {
+      "main": [
+        [{ "node": "Greeting Reply", "type": "main", "index": 0 }],
+        [{ "node": "Pricing Reply", "type": "main", "index": 0 }],
+        [{ "node": "Order Reply", "type": "main", "index": 0 }],
+        [{ "node": "Tracking Reply", "type": "main", "index": 0 }],
+        [{ "node": "Support Reply", "type": "main", "index": 0 }],
+        [{ "node": "Human Agent Reply", "type": "main", "index": 0 }],
+        [{ "node": "Unknown Reply", "type": "main", "index": 0 }]
+      ]
+    },
+    "Greeting Reply": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Pricing Reply": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Order Reply": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Tracking Reply": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Support Reply": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Human Agent Reply": {
+      "main": [
+        [{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }],
+        [{ "node": "Notify Owner?", "type": "main", "index": 0 }]
+      ]
+    },
+    "Unknown Reply": {
+      "main": [[{ "node": "Send WhatsApp Reply", "type": "main", "index": 0 }]]
+    },
+    "Notify Owner?": {
+      "main": [
+        [{ "node": "Alert Owner (+923396267447)", "type": "main", "index": 0 }],
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": [
+    { "name": "WhatsApp" },
+    { "name": "Bot" },
+    { "name": "Automation" }
+  ]
+}
